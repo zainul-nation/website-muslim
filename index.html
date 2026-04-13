@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teman Ibadah - Solusi Ibadah Digital</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-green: #065f46;
+            --gold: #d4af37;
+            --light-gold: #fcf6ba;
+        }
+        body {
+            font-family: 'Plus+Jakarta+Sans', sans-serif;
+            background-color: #f8fafc;
+        }
+        .bg-gold-gradient {
+            background: linear-gradient(135deg, #d4af37 0%, #fcf6ba 50%, #d4af37 100%);
+        }
+        .text-gold { color: #b8860b; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+        }
+        .day-cell {
+            aspect-ratio: 1 / 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-radius: 8px;
+            font-size: 0.875rem;
+        }
+        .day-cell:hover { background-color: #e2e8f0; }
+        .day-period { background-color: #f87171 !important; color: white; }
+        .day-today { border: 2px solid var(--primary-green); font-weight: bold; }
+        
+        @keyframes tap-pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.95); }
+            100% { transform: scale(1); }
+        }
+        .tap-active { animation: tap-pulse 0.1s ease-out; }
+    </style>
+</head>
+<body class="pb-20">
+
+    <!-- App State/Navigation -->
+    <div id="app">
+        <!-- Main Navigation (Top) -->
+        <nav class="sticky top-0 z-50 bg-white shadow-sm px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-emerald-800 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-moon text-white text-xs"></i>
+                </div>
+                <span class="font-bold text-emerald-900">Teman Ibadah</span>
+            </div>
+            <div class="text-xs text-gray-500 font-medium" id="current-date-display"></div>
+        </nav>
+
+        <!-- Dynamic Content Area -->
+        <main id="main-content" class="container mx-auto max-w-md min-h-screen p-4">
+            <!-- Content will be rendered here via JS -->
+        </main>
+
+        <!-- Bottom Navigation Bar -->
+        <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-2 flex justify-between items-center z-50">
+            <button onclick="renderHome()" class="flex flex-col items-center gap-1 text-emerald-800">
+                <i class="fas fa-home"></i>
+                <span class="text-[10px]">Home</span>
+            </button>
+            <button onclick="renderPeriod()" class="flex flex-col items-center gap-1 text-gray-400 hover:text-emerald-800">
+                <i class="fas fa-calendar-alt"></i>
+                <span class="text-[10px]">Menstruasi</span>
+            </button>
+            <button onclick="renderPrayers()" class="flex flex-col items-center gap-1 text-gray-400 hover:text-emerald-800">
+                <i class="fas fa-mosque"></i>
+                <span class="text-[10px]">Salat</span>
+            </button>
+            <button onclick="renderTasbih()" class="flex flex-col items-center gap-1 text-gray-400 hover:text-emerald-800">
+                <i class="fas fa-ellipsis-h"></i>
+                <span class="text-[10px]">Tasbih</span>
+            </button>
+            <button onclick="renderTodo()" class="flex flex-col items-center gap-1 text-gray-400 hover:text-emerald-800">
+                <i class="fas fa-list-check"></i>
+                <span class="text-[10px]">Ibadah</span>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA MANAGEMENT ---
+        const DEFAULT_STATE = {
+            lastResetDate: new Date().toDateString(),
+            periodDays: [], // ['YYYY-MM-DD']
+            prayers: { subuh: false, dzuhur: false, ashar: false, maghrib: false, isya: false },
+            tasbihRecords: [],
+            todoList: [
+                { id: 1, task: "Membaca Surah Al-Waqiah", done: false },
+                { id: 2, task: "Membaca Surah Al-Mulk", done: false },
+                { id: 3, task: "Membaca Surah Yasin", done: false },
+                { id: 4, task: "Membaca Shalawat Nariyah", done: false },
+                { id: 5, task: "Membaca Dala'il Khairat", done: false }
+            ]
+        };
+
+        let state = JSON.parse(localStorage.getItem('teman_ibadah_state')) || DEFAULT_STATE;
+
+        function saveState() {
+            localStorage.setItem('teman_ibadah_state', JSON.stringify(state));
+        }
+
+        function checkMidnightReset() {
+            const today = new Date().toDateString();
+            if (state.lastResetDate !== today) {
+                state.lastResetDate = today;
+                state.prayers = { subuh: false, dzuhur: false, ashar: false, maghrib: false, isya: false };
+                state.todoList.forEach(t => t.done = false);
+                saveState();
+                console.log("Data harian telah direset untuk hari baru.");
+            }
+        }
+
+        // --- COMPONENTS & PAGES ---
+
+        // 1. HOME
+        function renderHome() {
+            checkMidnightReset();
+            const prayerCount = Object.values(state.prayers).filter(v => v).length;
+            const todoCount = state.todoList.filter(t => t.done).length;
+            const progress = Math.round(((prayerCount + todoCount) / (5 + state.todoList.length)) * 100);
+
+            document.getElementById('main-content').innerHTML = `
+                <section class="space-y-6 animate-fade-in">
+                    <!-- Hero Section -->
+                    <div class="bg-emerald-800 rounded-3xl p-6 text-white relative overflow-hidden shadow-xl">
+                        <div class="relative z-10">
+                            <h1 class="text-2xl font-bold mb-2">Assalamu'alaikum, Kakak ✨</h1>
+                            <p class="text-emerald-100 text-sm leading-relaxed mb-4">
+                                "Welcome Kakak, saya akan menemani ibadahmu setiap saat. Jadikan hari ini lebih mulia dengan ketaatan."
+                            </p>
+                            <div class="bg-white/10 p-3 rounded-xl inline-block">
+                                <p class="text-[10px] uppercase tracking-wider font-semibold opacity-80">Progress Ibadah Hari Ini</p>
+                                <div class="flex items-center gap-3 mt-1">
+                                    <div class="w-32 h-2 bg-white/20 rounded-full overflow-hidden">
+                                        <div class="h-full bg-yellow-400" style="width: ${progress}%"></div>
+                                    </div>
+                                    <span class="text-xs font-bold">${progress}%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <i class="fas fa-mosque absolute -bottom-4 -right-4 text-white/10 text-8xl"></i>
+                    </div>
+
+                    <!-- App Grid -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div onclick="renderPeriod()" class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center cursor-pointer hover:border-emerald-500 transition-colors">
+                            <div class="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-3">
+                                <i class="fas fa-calendar-heart text-xl"></i>
+                            </div>
+                            <h3 class="font-bold text-sm text-gray-800">Menstruasi</h3>
+                            <p class="text-[10px] text-gray-500 mt-1">Pantau siklus & kesehatan</p>
+                        </div>
+                        <div onclick="renderPrayers()" class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center cursor-pointer hover:border-emerald-500 transition-colors">
+                            <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mb-3">
+                                <i class="fas fa-clock text-xl"></i>
+                            </div>
+                            <h3 class="font-bold text-sm text-gray-800">Salat 5 Waktu</h3>
+                            <p class="text-[10px] text-gray-500 mt-1">Checklist ketepatan waktu</p>
+                        </div>
+                        <div onclick="renderTasbih()" class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center cursor-pointer hover:border-emerald-500 transition-colors">
+                            <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mb-3">
+                                <i class="fas fa-fingerprint text-xl"></i>
+                            </div>
+                            <h3 class="font-bold text-sm text-gray-800">Tasbih Digital</h3>
+                            <p class="text-[10px] text-gray-500 mt-1">Zikir & Shalawat tenang</p>
+                        </div>
+                        <div onclick="renderTodo()" class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center cursor-pointer hover:border-emerald-500 transition-colors">
+                            <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-3">
+                                <i class="fas fa-tasks text-xl"></i>
+                            </div>
+                            <h3 class="font-bold text-sm text-gray-800">Amalan Harian</h3>
+                            <p class="text-[10px] text-gray-500 mt-1">Surah & Doa harian</p>
+                        </div>
+                    </div>
+
+                    <!-- Daily Wisdom -->
+                    <div class="bg-amber-50 border border-amber-100 p-4 rounded-2xl">
+                        <div class="flex gap-3">
+                            <i class="fas fa-quote-left text-amber-400"></i>
+                            <p class="text-xs italic text-amber-800 leading-relaxed">
+                                "Barangsiapa yang menempuh jalan untuk mencari ilmu, maka Allah akan memudahkan baginya jalan menuju surga." (HR. Muslim)
+                            </p>
+                        </div>
+                    </div>
+                </section>
+            `;
+            updateActiveNav(0);
+        }
+
+        // 2. KALENDER DATANG BULAN
+        let currentCalYear = 2026;
+        let currentCalMonth = 0; // Jan
+
+        function renderPeriod() {
+            const months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+            
+            document.getElementById('main-content').innerHTML = `
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <h2 class="text-xl font-bold text-emerald-900">Kalender Menstruasi</h2>
+                        <div class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full font-bold">Periode 2026-2027</div>
+                    </div>
+
+                    <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                        <!-- Cal Header -->
+                        <div class="flex justify-between items-center mb-4">
+                            <button onclick="changeMonth(-1)" class="p-2 hover:bg-gray-100 rounded-lg"><i class="fas fa-chevron-left"></i></button>
+                            <span class="font-bold text-gray-700">${months[currentCalMonth]} ${currentCalYear}</span>
+                            <button onclick="changeMonth(1)" class="p-2 hover:bg-gray-100 rounded-lg"><i class="fas fa-chevron-right"></i></button>
+                        </div>
+
+                        <!-- Cal Grid -->
+                        <div class="calendar-grid text-center text-[10px] font-bold text-gray-400 mb-2">
+                            <div>MIN</div><div>SEN</div><div>SEL</div><div>RAB</div><div>KAM</div><div>JUM</div><div>SAB</div>
+                        </div>
+                        <div id="calendar-days" class="calendar-grid gap-1">
+                            <!-- Days via JS -->
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                        <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
+                            <i class="fas fa-info-circle text-emerald-500"></i> Ringkasan
+                        </h3>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-gray-50 p-3 rounded-xl">
+                                <p class="text-[10px] text-gray-500">Total Hari Dicatat</p>
+                                <p class="text-lg font-bold text-emerald-800">${state.periodDays.length} Hari</p>
+                            </div>
+                            <div class="bg-gray-50 p-3 rounded-xl">
+                                <p class="text-[10px] text-gray-500">Status</p>
+                                <p class="text-sm font-bold text-red-500">
+                                    ${state.periodDays.includes(new Date().toISOString().split('T')[0]) ? 'Sedang Haid' : 'Siklus Normal'}
+                                </p>
+                            </div>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-4 text-center">Ketuk tanggal di kalender untuk menandai datang bulan (Merah).</p>
+                    </div>
+                </div>
+            `;
+            generateCalendar();
+            updateActiveNav(1);
+        }
+
+        function changeMonth(dir) {
+            currentCalMonth += dir;
+            if (currentCalMonth > 11) { currentCalMonth = 0; currentCalYear++; }
+            if (currentCalMonth < 0) { currentCalMonth = 11; currentCalYear--; }
+            
+            // Limit 2026-2027
+            if (currentCalYear < 2026) { currentCalYear = 2026; currentCalMonth = 0; }
+            if (currentCalYear > 2027) { currentCalYear = 2027; currentCalMonth = 11; }
+            
+            renderPeriod();
+        }
+
+        function generateCalendar() {
+            const container = document.getElementById('calendar-days');
+            const firstDay = new Date(currentCalYear, currentCalMonth, 1).getDay();
+            const daysInMonth = new Date(currentCalYear, currentCalMonth + 1, 0).getDate();
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            for (let i = 0; i < firstDay; i++) {
+                container.innerHTML += `<div></div>`;
+            }
+
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${currentCalYear}-${String(currentCalMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const isPeriod = state.periodDays.includes(dateStr);
+                const isToday = dateStr === todayStr;
+                
+                container.innerHTML += `
+                    <div onclick="togglePeriod('${dateStr}')" 
+                         class="day-cell ${isPeriod ? 'day-period' : ''} ${isToday ? 'day-today' : ''}">
+                        ${d}
+                    </div>
+                `;
+            }
+        }
+
+        function togglePeriod(dateStr) {
+            const idx = state.periodDays.indexOf(dateStr);
+            if (idx > -1) state.periodDays.splice(idx, 1);
+            else state.periodDays.push(dateStr);
+            saveState();
+            renderPeriod();
+        }
+
+        // 3. SALAT 5 WAKTU
+        function renderPrayers() {
+            const prayers = [
+                { id: 'subuh', name: 'Subuh', time: '04:45', icon: 'fa-sun' },
+                { id: 'dzuhur', name: 'Dzuhur', time: '12:05', icon: 'fa-sun' },
+                { id: 'ashar', name: 'Ashar', time: '15:20', icon: 'fa-cloud-sun' },
+                { id: 'maghrib', name: 'Maghrib', time: '18:10', icon: 'fa-moon' },
+                { id: 'isya', name: 'Isya', time: '19:20', icon: 'fa-star' }
+            ];
+
+            document.getElementById('main-content').innerHTML = `
+                <div class="space-y-4">
+                    <div class="text-center mb-6">
+                        <h2 class="text-xl font-bold text-emerald-900">Ibadah Salat</h2>
+                        <p class="text-xs text-gray-500">Ayo jaga salat tepat waktu, Kak!</p>
+                    </div>
+
+                    <div class="space-y-3">
+                        ${prayers.map(p => `
+                            <div onclick="togglePrayer('${p.id}')" class="bg-white p-4 rounded-2xl flex items-center justify-between border ${state.prayers[p.id] ? 'border-emerald-500 bg-emerald-50' : 'border-gray-100'} shadow-sm transition-all cursor-pointer">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-10 h-10 rounded-full flex items-center justify-center ${state.prayers[p.id] ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-400'}">
+                                        <i class="fas ${p.icon}"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-bold text-sm ${state.prayers[p.id] ? 'text-emerald-900' : 'text-gray-700'}">${p.name}</h4>
+                                        <p class="text-[10px] text-gray-400">${p.time} WIB</p>
+                                    </div>
+                                </div>
+                                <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center ${state.prayers[p.id] ? 'bg-emerald-500 border-emerald-500' : 'border-gray-200'}">
+                                    ${state.prayers[p.id] ? '<i class="fas fa-check text-white text-[10px]"></i>' : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div class="p-4 bg-emerald-800 rounded-2xl text-white text-center mt-6">
+                        <p class="text-[10px] opacity-80 uppercase font-bold mb-1">Status Hari Ini</p>
+                        <p class="text-sm font-medium">
+                            ${Object.values(state.prayers).filter(v => v).length === 5 ? 'Maa Syaa Allah! Salat kamu lengkap.' : 'Selesaikan salatmu hari ini ya.'}
+                        </p>
+                    </div>
+                </div>
+            `;
+            updateActiveNav(2);
+        }
+
+        function togglePrayer(id) {
+            state.prayers[id] = !state.prayers[id];
+            saveState();
+            renderPrayers();
+        }
+
+        // 4. TASBIH DIGITAL
+        let currentCount = 0;
+        let tasbihName = "Zikir Umum";
+
+        function renderTasbih() {
+            document.getElementById('main-content').innerHTML = `
+                <div class="flex flex-col h-full space-y-4">
+                    <div class="text-center">
+                        <h2 class="text-xl font-bold text-emerald-900">Tasbih Digital</h2>
+                    </div>
+
+                    <div class="bg-white rounded-3xl p-6 shadow-xl border border-gray-100 flex flex-col items-center">
+                        <input type="text" id="tasbih-name" value="${tasbihName}" onchange="tasbihName = this.value" 
+                               class="text-center bg-gray-50 border-none text-emerald-800 font-bold rounded-lg px-4 py-2 mb-8 focus:ring-2 focus:ring-emerald-500 outline-none w-full"
+                               placeholder="Nama Zikir/Shalawat...">
+                        
+                        <div id="tasbih-circle" onclick="incrementTasbih()" class="w-48 h-48 bg-emerald-800 rounded-full flex flex-col items-center justify-center text-white shadow-2xl active:scale-95 transition-transform cursor-pointer border-[8px] border-emerald-700">
+                            <span class="text-5xl font-black mb-1">${currentCount}</span>
+                            <span class="text-[10px] uppercase opacity-60">Tap Disini</span>
+                        </div>
+
+                        <div class="flex gap-4 mt-8 w-full">
+                            <button onclick="decrementTasbih()" class="flex-1 py-3 bg-gray-100 rounded-xl text-gray-500 font-bold active:scale-95 transition-transform">Kurang</button>
+                            <button onclick="resetTasbih()" class="flex-1 py-3 bg-red-50 text-red-500 rounded-xl font-bold active:scale-95 transition-transform">Reset</button>
+                        </div>
+
+                        <button onclick="saveTasbih()" class="w-full mt-4 py-3 bg-amber-500 text-white rounded-xl font-bold shadow-lg shadow-amber-200 active:scale-95 transition-transform">Simpan Progress</button>
+                    </div>
+
+                    <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 overflow-hidden">
+                        <h3 class="text-sm font-bold mb-3">Riwayat Simpanan</h3>
+                        <div id="tasbih-history" class="space-y-2 max-h-48 overflow-y-auto pr-2">
+                            ${state.tasbihRecords.length === 0 ? '<p class="text-xs text-gray-400 text-center py-4">Belum ada data tersimpan.</p>' : ''}
+                            ${state.tasbihRecords.map((r, idx) => `
+                                <div class="bg-gray-50 p-3 rounded-xl flex justify-between items-center">
+                                    <div>
+                                        <p class="text-xs font-bold text-gray-700">${r.name}</p>
+                                        <p class="text-[10px] text-gray-400">${r.date}</p>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <span class="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold">${r.count}</span>
+                                        <button onclick="deleteTasbih(${idx})" class="text-red-300 hover:text-red-500"><i class="fas fa-trash-alt"></i></button>
+                                    </div>
+                                </div>
+                            `).reverse().join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            updateActiveNav(3);
+        }
+
+        function incrementTasbih() {
+            currentCount++;
+            const circle = document.getElementById('tasbih-circle');
+            circle.classList.add('tap-active');
+            setTimeout(() => circle.classList.remove('tap-active'), 100);
+            renderTasbih();
+        }
+
+        function decrementTasbih() {
+            if (currentCount > 0) currentCount--;
+            renderTasbih();
+        }
+
+        function resetTasbih() {
+            currentCount = 0;
+            renderTasbih();
+        }
+
+        function saveTasbih() {
+            if (currentCount === 0) return;
+            const record = {
+                name: tasbihName || "Tanpa Nama",
+                count: currentCount,
+                date: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+            };
+            state.tasbihRecords.push(record);
+            saveState();
+            currentCount = 0;
+            renderTasbih();
+        }
+
+        function deleteTasbih(idx) {
+            // Because we reversed for display, we must find correct original index
+            const originalIdx = (state.tasbihRecords.length - 1) - idx;
+            state.tasbihRecords.splice(idx, 1);
+            saveState();
+            renderTasbih();
+        }
+
+        // 5. TODO LIST IBADAH
+        function renderTodo() {
+            const completedCount = state.todoList.filter(t => t.done).length;
+            const progress = Math.round((completedCount / state.todoList.length) * 100);
+
+            document.getElementById('main-content').innerHTML = `
+                <div class="space-y-4">
+                    <div class="text-center">
+                        <h2 class="text-xl font-bold text-emerald-900">Amalan Harian</h2>
+                        <p class="text-xs text-gray-500">Istiqomah adalah kunci keberkahan.</p>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-4">
+                        <div class="flex justify-between items-end mb-2">
+                            <span class="text-xs font-bold text-gray-600">Progres Amalan</span>
+                            <span class="text-lg font-black text-emerald-600">${progress}%</span>
+                        </div>
+                        <div class="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
+                            <div class="h-full bg-emerald-500 transition-all duration-500" style="width: ${progress}%"></div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        ${state.todoList.map(t => `
+                            <div onclick="toggleTodo(${t.id})" class="bg-white p-4 rounded-2xl flex items-center gap-4 border ${t.done ? 'border-emerald-500 bg-emerald-50 opacity-80' : 'border-gray-100'} shadow-sm transition-all cursor-pointer">
+                                <div class="w-6 h-6 rounded-lg border-2 flex items-center justify-center ${t.done ? 'bg-emerald-500 border-emerald-500' : 'border-gray-200'}">
+                                    ${t.done ? '<i class="fas fa-check text-white text-[10px]"></i>' : ''}
+                                </div>
+                                <span class="text-sm font-medium ${t.done ? 'text-gray-400 line-through' : 'text-gray-700'}">${t.task}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div class="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex gap-3 mt-6">
+                        <i class="fas fa-lightbulb text-amber-500 mt-1"></i>
+                        <p class="text-[10px] text-amber-800 leading-relaxed">
+                            <strong>Note:</strong> Daftar ini akan otomatis kembali kosong pada jam 00:00 malam agar kakak bisa memulai hari baru dengan semangat baru.
+                        </p>
+                    </div>
+                </div>
+            `;
+            updateActiveNav(4);
+        }
+
+        function toggleTodo(id) {
+            const todo = state.todoList.find(t => t.id === id);
+            if (todo) {
+                todo.done = !todo.done;
+                saveState();
+                renderTodo();
+            }
+        }
+
+        // --- UTILS ---
+        function updateActiveNav(index) {
+            const btns = document.querySelectorAll('div.fixed.bottom-0 button');
+            btns.forEach((btn, i) => {
+                if (i === index) {
+                    btn.classList.add('text-emerald-800');
+                    btn.classList.remove('text-gray-400');
+                } else {
+                    btn.classList.add('text-gray-400');
+                    btn.classList.remove('text-emerald-800');
+                }
+            });
+        }
+
+        // Date Display
+        function updateDate() {
+            const now = new Date();
+            const options = { weekday: 'long', day: 'numeric', month: 'long' };
+            document.getElementById('current-date-display').innerText = now.toLocaleDateString('id-ID', options);
+        }
+
+        // Initialize
+        window.onload = () => {
+            updateDate();
+            renderHome();
+            // Periodically check for midnight reset
+            setInterval(checkMidnightReset, 60000); 
+        };
+
+    </script>
+</body>
+</html>
